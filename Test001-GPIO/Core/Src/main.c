@@ -123,6 +123,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   printf("\033[2J\n");  //CLEAR SCREEN 프롬포트 화면 초기화
   printf("\033[1;1H\n");  //y;xH (x,y) 위치로 커서 옮기기
+  //git hub upload test
   /* USER CODE END 2 */
 
   /* Infinite loop */
