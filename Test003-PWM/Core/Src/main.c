@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -40,33 +40,11 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+TIM_HandleTypeDef htim2;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-char s [200];  //출력 버퍼
-char b [100];  //입력 버퍼
-
-//int __io_putchar(int ch)  //1문자단위로 포트로 출력
-//{
-//	HAL_UART_Transmit(&huart2, &ch, 1, 10);
-//	return ch;
-//}
-//int __io_getchar(void)
-//{
-//	char ch;
-//	while(HAL_UART_Receive(&huart2, &ch, 1, 10) != HAL_OK);
-//	HAL_UART_Transmit(&huart2, &ch, 1, 10);
-//	if(ch=='\r') HAL_UART_Transmit(&huart2, "\n", 1, 10);
-//	return ch;
-//}
-//
-//void ProgramStart()
-//{
-//	printf("\033[2J\033[1;1H\n");  //y;xH (x,y) 위치로 커서 옮기기
-//	printf("program ready. Press Blue button to start\n");
-//	while(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) !=0);
-//}
-//int __io_getchar(void);
 
 /* USER CODE END PV */
 
@@ -74,38 +52,18 @@ char b [100];  //입력 버퍼
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-int count=0;
-int mode=0;
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)  //EXTI15(B1)ISR
+
+int mux=1;
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-//	if (GPIO_Pin==B1_Pin)
-//	{
-//		mode++;
-//		if (mode>1) mode=0;
-//	}
-//	else if(GPIO_Pin==B2_Pin)
-//	{
-//
-//	}
-
-	switch(GPIO_Pin){
-	case B1_Pin:
-		mode++;
-		if (mode>1) mode=0;
-		break;
-
-	case B2_Pin:
-		printf("%d times pressed\r\n", count++);
-		//sprintf(s,"%d times pressed", count++); puts(s);  //puts가 출력하는 문자열 뒤에 엔터를 넣어줌
-		break;
-
-	}
+	if(++mux>20) mux=1;
 }
 
 /* USER CODE END 0 */
@@ -136,41 +94,29 @@ int main(void)
 
   /* USER CODE END SysInit */
 
-  /* Initialize all configured peripher;als */
+  /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-  //printf("\033[2J\n");  //CLEAR SCREEN 프롬포트 화면 초기화
-  //printf("\033[2J\033[1;1H\n");  //y;xH (x,y) 위치로 커서 옮기기
-  //printf("Program started...Input start number: ");
-  //printf("program ready. Press Blue button to start\n");
-  //while(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) !=0);
 
-  ProgramStart();
-  setvbuf(stdin, NULL, _IONBF, 0);  //input buffer clear
-  int i; scanf("%d", &i);
-  printf("your input number: %d\r\n", i);
-  count=i;
-  //git hub upload test
+  ProgramStart("PWM");
+
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
+  htim2.Instance->CCR3 = 20;
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  int sn=2800;  //C?���?
   while (1)
   {
-	  //int a= HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);  //PC13: B1
-	  if (mode==1)
-	  {
-
-		  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 1);
-		  HAL_Delay(500);  //500ms
-		  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);
-		  HAL_Delay(500);  //500ms
-	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
+	  htim2.Instance->PSC=sn/mux;
+	  int f=84000000L/(htim2.Instance->PSC * htim2.Instance->ARR);
+	  printf("Current Frequency: %d\r\n", f);
   }
   /* USER CODE END 3 */
 }
@@ -219,6 +165,55 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 8400-1;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 1000-1;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+  HAL_TIM_MspPostInit(&htim2);
+
 }
 
 /**
@@ -287,16 +282,7 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : B2_Pin */
-  GPIO_InitStruct.Pin = B2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(B2_GPIO_Port, &GPIO_InitStruct);
-
   /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
-
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
