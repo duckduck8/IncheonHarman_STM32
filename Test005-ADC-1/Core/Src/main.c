@@ -40,12 +40,11 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-TIM_HandleTypeDef htim2;
+ADC_HandleTypeDef hadc1;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
 
 /* USER CODE END PV */
 
@@ -53,74 +52,13 @@ UART_HandleTypeDef huart2;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_TIM2_Init(void);
+static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-int mux = 0;
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-	if(++mux > 20) mux = 1;
-}
-
-// DRMFSLC : DO   RE   MI FA   SL   LA   CI
-//           C C♯ D D♯ E  F F♯ G G♯ A A♯ B
-enum { DO=0,Do,RE,Re,MI,FA,Fa,SL,Sl,LA,La,CI, hDo, hRE, hRe, hMi, hFA, hFa, hSL, hSl, hLA, hLa, hCI};
-double pitchF[] = {130.81,138.59,146.83,155.56,164.81,174.61,185.00,196.00,207.65,220.00,233.08,246.94,
-		           261.62, 277.18, 293.66, 311.12, 329.62, 349.22, 370.00, 392.00, 415.30, 440.00, 466.16, 493.88};
-int p3[24];
-int arr = 1000, clk = 84000000;
-void calcPitch()
-{
-	for(int i=0;i<24;i++)
-	{
-		p3[i] = clk / (pitchF[i] *2* arr);
-	}
-}
-
-void PlaySound (int pIdx, int rtm)
-{
-    htim2.Instance->PSC = p3[pIdx];
-    HAL_Delay(2000 / rtm);
-}
-
-
-int Song[] = {SL,SL,MI,FA,SL,LA,LA,SL,
-		SL,DO,MI,RE,DO,RE,MI,MI,RE,RE,DO,RE,DO,LA,LA,
-		SL,SL,SL,MI,RE,DO,RE,RE,MI,DO,RE,RE,MI,SL,LA,DO,MI,RE,
-		DO,RE,MI,MI,RE,RE,DO,RE,DO,LA,LA,SL,SL,SL,MI,RE,DO, -1 };
-
-int Rythm[] = {4,4,8,8,4,4,4,2,4,4,4,8,8,1,
-		4,4,4,4,4,8,8,4,4,4,4,4,8,8,1,4,4,4,4,4,4,4,4,4,4,4,8,8,1,
-		4,4,4,4,4,8,8,4,4,4,4,4,8,8,1};
-
-
-
-
-/*
-int mode = 0;
-
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-
-	if (GPIO_Pin == B1_Pin)
-		mode++;
-	if (mode >= 2) mode = 0;
-
-
-	if (GPIO_Pin == B1_Pin) {
-	        mux++;
-	        if (mux >= num_notes) mux = 0;
-	    }
-*/
-
-
-
-
 
 /* USER CODE END 0 */
 
@@ -131,17 +69,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	/*
-	const int notes[] = {
-	    392, 392, 329, 349, 392, 440, 440, 392,  // ?�� ?�� �??? ?�� ?�� ?�� ?�� ?��
-	    523, 659, 659, 587, 523, 587, 659, 659,// ?�� �??? ?�� ?�� ?��
-		587, 587, 523, 587, 523, 440, 392, 392,
-		392, 329, 293, 261
-	};
 
-	const int num_notes = sizeof(notes) / sizeof(notes[0]);
-	int i;
-	*/
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -163,59 +91,151 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
-  MX_TIM2_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
+  ProgramStart("ADC Polling");
+  // 전역 변수 선언
+  int sx=80, sy=24;  //screen size
+  int cx = 0, cy = 0;  // 조이스틱의 현재 위치
+  int ball_x = 40, ball_y = 10;  // 공의 현재 위치
+  int ball_dx = 1, ball_dy = -1;  // 공의 이동 방향
+  int width = 80, height = 24;  // 콘솔 창 크기
 
-  ProgramStart("Song");
-  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
-  htim2.Instance->CCR3 = htim2.Instance->ARR / 2;
-  calcPitch();
-  //htim2.Instance->CCR3 = 40;
+// 공 튀기기 게임
+
+  void draw_screen() {
+      // 화면을 지우고 새로 그리기
+      printf("\033[2J");  // 화면 지우기
+
+      // 스틱 그리기
+      printf("\033[%d;%dH>______<", cy, cx);
+
+
+      // 공 그리기
+      printf("\033[%d;%dHO\n", ball_y, ball_x);
+
+  }
+
+
+  void update_ball() {
+      // 공의 위치 업데이트
+      ball_x += ball_dx;
+      ball_y += ball_dy;
+
+      // 벽에 부딪히면 방향 변경
+      if (ball_x <= 0 || ball_x >= width) {
+          ball_dx = -ball_dx;
+      }
+      if (ball_y <= 0 || ball_y >= height) {
+          ball_dy = -ball_dy;
+      }
+
+      // 스틱에 부딪히면 방향 변경
+      if (ball_y == cy && ball_x >= cx && ball_x <= cx + 4) {
+          ball_dy = -ball_dy;
+      }
+
+
+  }
+
+  void game_loop() {
+      while (1) {
+          // ADC 값 읽기
+          HAL_ADC_Start(&hadc1);
+          HAL_ADC_PollForConversion(&hadc1, 1000);  // 변환 완료 대기 (타임아웃 1000ms)
+          int v = HAL_ADC_GetValue(&hadc1);
+          int x = (sx * v) / 4096;
+
+          HAL_ADC_Start(&hadc1);
+          HAL_ADC_PollForConversion(&hadc1, 1000);  // 변환 완료 대기 (타임아웃 1000ms)
+          v = HAL_ADC_GetValue(&hadc1);
+          int y = (sy * v) / 4096;
+
+          int z = HAL_GPIO_ReadPin(Z_axis_GPIO_Port, Z_axis_Pin);  // Z축 값 읽기
+
+          // 스틱 위치 업데이트
+          cx = x;
+          cy = y;
+
+          // 공 위치 업데이트
+          update_ball();
+
+          // 화면 업데이트
+          draw_screen();
+
+          // 지연
+          HAL_Delay(100);
+      }
+  }
+// ProgramStart("ADC Polling");
+//  printf("\033[2J\033[?25l\n");
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-
-  int sn = 2800;// C3
-  //mux = 1;
+//  int sx=80, sy=24;  //screen size
+//  int cx=39, cy=24;  //initial position
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 
-	  for(int i = 0; Song[i] != -1; i++) // while(Song[i] != -1)
-	      {
-	           PlaySound(Song[i], Rythm[i]);
-	      }
-	      htim2.Instance->CCR3 = 0;   // Duty rate 0;
-	     // int f = 84000000 / (htim2.Instance->PSC * htim2.Instance->ARR);
-	      printf("ㅋㅋ. \r\n");
-	      Wait();
-  }
-	  /*
-	  if(mode == 1)
-	  {
-      for (i = 0; i < num_notes; i++)
-	  {
-    	  int note_freq = notes[i];
-    	  int prescaler = (84000000 / (note_freq * htim2.Instance->ARR));
-    	  htim2.Instance->PSC = prescaler;
-    	  int f = 84000000 / (htim2.Instance->PSC * htim2.Instance->ARR);
-    	  printf("Current Frequency : %d\r\n", f);
-    	  HAL_Delay(1000);
+	game_loop();
+	// method 1
+//	HAL_ADC_Start(&hadc1);
+//	HAL_ADC_PollForConversion(&hadc1, 1000);  //start trigger
+//	int x=HAL_ADC_GetValue(&hadc1);
+//	//HAL_ADC_Stop(&hadc1);  //stop (not necessary)
+//	HAL_ADC_Start(&hadc1);
+//	HAL_ADC_PollForConversion(&hadc1, 1000);  //start trigger
+//	int y=HAL_ADC_GetValue(&hadc1);
+//	int z=HAL_GPIO_ReadPin(Z_axis_GPIO_Port, Z_axis_Pin);
+//	//printf("ADC Value: [%d, %d, %d]\r\n", x, y, z);
+//	printf("\033[?25l");
+//	printf("\033[2J\033[0;1HADC Value: [%d, %d, %d]\n", x, y, z);
+//	printf("\033[%d;%dH @\r\n", y*24/4000, x*80/4000);
+//	HAL_Delay(50);
 
-	      if (i == num_notes - 1)
-	      {
-	     	 mode = 0;
-	      }
-	     }
-	   }
-	//  htim2.Instance->PSC = sn / i;
-    //  int f = 84000000 / (htim2.Instance->PSC * htim2.Instance->ARR);
-	//  printf("Current Frequency : %d\r\n", f);
+	//method 2
+//	HAL_ADC_Start(&hadc1);
+//	HAL_ADC_PollForConversion(&hadc1, 1000);  //start trigger
+//	int v=HAL_ADC_GetValue(&hadc1);
+//	int x=(sx*v)/4096;
+//	HAL_ADC_Start(&hadc1);
+//	HAL_ADC_PollForConversion(&hadc1, 1000);  //start trigger
+//	v=HAL_ADC_GetValue(&hadc1);
+//	int y=(sy*v)/4096;
+//	int z=HAL_GPIO_ReadPin(Z_axis_GPIO_Port, Z_axis_Pin);
+//	printf("\033[0;0HADC Value: [%d, %d, %d]\r\n", y, x, z);
+//	printf("\033[2J\033[%d;%dH \033[%d;%dH______\033[A\n", cy, cx, y, x);
+//	cx=x, cy=y;
+//	HAL_Delay(100);
+
+
+	// make game
+//	HAL_ADC_Start(&hadc1);
+//	HAL_ADC_PollForConversion(&hadc1, 1000);  //start trigger
+//	int v=HAL_ADC_GetValue(&hadc1);
+//	int x=(sx*v)/4096;
+//	HAL_ADC_Start(&hadc1);
+//	HAL_ADC_PollForConversion(&hadc1, 1000);  //start trigger
+//	v=HAL_ADC_GetValue(&hadc1);
+//	int y=(sy*v)/4096;
+//	int z=HAL_GPIO_ReadPin(Z_axis_GPIO_Port, Z_axis_Pin);
+//	printf("\033[0;0HADC Value: [%d, %d, %d]\r\n", y, x, z);
+//	printf("\033[2J\033[%d;%dH \033[%d;%dH>______<\033[A\n", cy, cx, y, x);
+//	cx=x, cy=y;
+//	HAL_Delay(100);
+
+
+
+
+
+
+
   }
-  */
   /* USER CODE END 3 */
 }
 
@@ -266,61 +286,64 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief TIM2 Initialization Function
+  * @brief ADC1 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_TIM2_Init(void)
+static void MX_ADC1_Init(void)
 {
 
-  /* USER CODE BEGIN TIM2_Init 0 */
+  /* USER CODE BEGIN ADC1_Init 0 */
 
-  /* USER CODE END TIM2_Init 0 */
+  /* USER CODE END ADC1_Init 0 */
 
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
+  ADC_ChannelConfTypeDef sConfig = {0};
 
-  /* USER CODE BEGIN TIM2_Init 1 */
+  /* USER CODE BEGIN ADC1_Init 1 */
 
-  /* USER CODE END TIM2_Init 1 */
-  htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 8400-1;
-  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 1000-1;
-  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.ScanConvMode = ENABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.DiscontinuousConvMode = ENABLE;
+  hadc1.Init.NbrOfDiscConversion = 1;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 2;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
     Error_Handler();
   }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM2_Init 2 */
 
-  /* USER CODE END TIM2_Init 2 */
-  HAL_TIM_MspPostInit(&htim2);
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_10;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_11;
+  sConfig.Rank = 2;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
 
 }
 
@@ -390,9 +413,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+  /*Configure GPIO pin : Z_axis_Pin */
+  GPIO_InitStruct.Pin = Z_axis_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(Z_axis_GPIO_Port, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
