@@ -42,6 +42,9 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 
+TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim4;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
@@ -53,12 +56,50 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
+static void MX_TIM3_Init(void);
+static void MX_TIM4_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+int xa[100],ya[100];
+void MakeItem()
+{
+	int i;
+	srand(htim4.Instance->CNT);
+	for(i=0;i<100;i++)
+	{
+		int v1 =  rand();  //0 ~ 2,147,483,647
+		int v2 =  rand();
+		//printf("v : %d\r\n", x);
+		//HAL_Delay(100);
+		xa[i] = (((double)v1 / 2147483647.)) * 80;
+		ya[i] = (((double)v2 / 2147483647.)) * 24;
+		//printf("[%d;%d](%d,%d)\r\n",v1, v2, xa[i], ya[i]);
+		printf("\033[%d;%dHo",ya[i], xa[i]);
+	}
+	printf("\n");
+}
+int cx=39,cy=12;  // initial position
+int x, y = 12;
+int idx=0;
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
+{
+	//HAL_ADC_Start(&hadc1);  no need in HAL_ADC_ConvCpltCallback function
+	//HAL_ADC_PollForConversion(&hadc1, 1000);  no need in HAL_ADC_ConvCpltCallback function
+	int v = ((double)((HAL_ADC_GetValue(&hadc1) / 1400))) - 1;  //(0~4096)/1400 = -1, 0, 1  -> joystick move 1kan
+	if (idx==0) x=cx+v; else y=cy+v;
+	//printf("ADC value: %d\r\n", v);
+	if(++idx==2) idx=0;
+
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+	HAL_ADC_Start_IT(&hadc1);  //from HAL_TIM_Base_Start_IT(&htim3) -> use htim3 Interrupt  -> OPERATE HAL_ADC_ConvCpltCallback
+}
 
 /* USER CODE END 0 */
 
@@ -92,149 +133,38 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_ADC1_Init();
+  MX_TIM3_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
-  ProgramStart("ADC Polling");
-  // 전역 변수 선언
-  int sx=80, sy=24;  //screen size
-  int cx = 0, cy = 0;  // 조이스틱의 현재 위치
-  int ball_x = 40, ball_y = 10;  // 공의 현재 위치
-  int ball_dx = 1, ball_dy = -1;  // 공의 이동 방향
-  int width = 80, height = 24;  // 콘솔 창 크기
+  ProgramStart("ADC-Interrupt");
+  HAL_TIM_Base_Start_IT(&htim3);  //use htim3 interrupt
+  HAL_TIM_Base_Start(&htim4);    // use htim4 timer
+  printf("\033[2J\033[?25l\n");  // Clear screen & cursor invisible
+  MakeItem();
 
-// 공 튀기기 게임
-
-  void draw_screen() {
-      // 화면을 지우고 새로 그리기
-      printf("\033[2J");  // 화면 지우기
-
-      // 스틱 그리기
-      printf("\033[%d;%dH>______<", cy, cx);
-
-
-      // 공 그리기
-      printf("\033[%d;%dHO\n", ball_y, ball_x);
-
-  }
-
-
-  void update_ball() {
-      // 공의 위치 업데이트
-      ball_x += ball_dx;
-      ball_y += ball_dy;
-
-      // 벽에 부딪히면 방향 변경
-      if (ball_x <= 0 || ball_x >= width) {
-          ball_dx = -ball_dx;
-      }
-      if (ball_y <= 0 || ball_y >= height) {
-          ball_dy = -ball_dy;
-      }
-
-      // 스틱에 부딪히면 방향 변경
-      if (ball_y == cy && ball_x >= cx && ball_x <= cx + 4) {
-          ball_dy = -ball_dy;
-      }
-
-
-  }
-
-  void game_loop() {
-      while (1) {
-          // ADC 값 읽기
-          HAL_ADC_Start(&hadc1);
-          HAL_ADC_PollForConversion(&hadc1, 1000);  // 변환 완료 대기 (타임아웃 1000ms)
-          int v = HAL_ADC_GetValue(&hadc1);
-          int x = (sx * v) / 4096;
-
-          HAL_ADC_Start(&hadc1);
-          HAL_ADC_PollForConversion(&hadc1, 1000);  // 변환 완료 대기 (타임아웃 1000ms)
-          v = HAL_ADC_GetValue(&hadc1);
-          int y = (sy * v) / 4096;
-
-          int z = HAL_GPIO_ReadPin(Z_axis_GPIO_Port, Z_axis_Pin);  // Z축 값 읽기
-
-          // 스틱 위치 업데이트
-          cx = x;
-          cy = y;
-
-          // 공 위치 업데이트
-          update_ball();
-
-          // 화면 업데이트
-          draw_screen();
-
-          // 지연
-          HAL_Delay(100);
-      }
-  }
-// ProgramStart("ADC Polling");
-//  printf("\033[2J\033[?25l\n");
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-//  int sx=80, sy=24;  //screen size
-//  int cx=39, cy=24;  //initial position
+  int sx=80,sy=24;	// screen size
+
   while (1)
   {
+
+
+	 //printf("current adc: %d %d\r\n", x, y);
+	 x = (x > 78) ? 78 : (x < 0) ? 0 : x;
+	 y = (y > 23) ? 23 : (y < 0) ? 0 : y;
+	 int z = HAL_GPIO_ReadPin(Z_Axis_GPIO_Port, Z_Axis_Pin);
+	 printf("\033[0;0HADC Value : (%d,%d,%d)", x, y, z);  // location info
+	 printf("\033[%d;%dH \033[%d;%dH@\033[A\n", cy, cx, y, x);
+	 cx = x; cy = y;  //save joysitck current position
+	 HAL_Delay(100);
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
-	game_loop();
-
-	// method 1
-//	HAL_ADC_Start(&hadc1);
-//	HAL_ADC_PollForConversion(&hadc1, 1000);  //start trigger
-//	int x=HAL_ADC_GetValue(&hadc1);
-//	//HAL_ADC_Stop(&hadc1);  //stop (not necessary)
-//	HAL_ADC_Start(&hadc1);
-//	HAL_ADC_PollForConversion(&hadc1, 1000);  //start trigger
-//	int y=HAL_ADC_GetValue(&hadc1);
-//	int z=HAL_GPIO_ReadPin(Z_axis_GPIO_Port, Z_axis_Pin);
-//	//printf("ADC Value: [%d, %d, %d]\r\n", x, y, z);
-//	printf("\033[?25l");
-//	printf("\033[2J\033[0;1HADC Value: [%d, %d, %d]\n", x, y, z);
-//	printf("\033[%d;%dH @\r\n", y*24/4000, x*80/4000);
-//	HAL_Delay(50);
-
-	//method 2
-//	HAL_ADC_Start(&hadc1);
-//	HAL_ADC_PollForConversion(&hadc1, 1000);  //start trigger
-//	int v=HAL_ADC_GetValue(&hadc1);
-//	int x=(sx*v)/4096;
-//	HAL_ADC_Start(&hadc1);
-//	HAL_ADC_PollForConversion(&hadc1, 1000);  //start trigger
-//	v=HAL_ADC_GetValue(&hadc1);
-//	int y=(sy*v)/4096;
-//	int z=HAL_GPIO_ReadPin(Z_axis_GPIO_Port, Z_axis_Pin);
-//	printf("\033[0;0HADC Value: [%d, %d, %d]\r\n", y, x, z);
-//	printf("\033[2J\033[%d;%dH \033[%d;%dH______\033[A\n", cy, cx, y, x);
-//	cx=x, cy=y;
-//	HAL_Delay(100);
-
-
-	// make game
-//	HAL_ADC_Start(&hadc1);
-//	HAL_ADC_PollForConversion(&hadc1, 1000);  //start trigger
-//	int v=HAL_ADC_GetValue(&hadc1);
-//	int x=(sx*v)/4096;
-//	HAL_ADC_Start(&hadc1);
-//	HAL_ADC_PollForConversion(&hadc1, 1000);  //start trigger
-//	v=HAL_ADC_GetValue(&hadc1);
-//	int y=(sy*v)/4096;
-//	int z=HAL_GPIO_ReadPin(Z_axis_GPIO_Port, Z_axis_Pin);
-//	printf("\033[0;0HADC Value: [%d, %d, %d]\r\n", y, x, z);
-//	printf("\033[2J\033[%d;%dH \033[%d;%dH>______<\033[A\n", cy, cx, y, x);
-//	cx=x, cy=y;
-//	HAL_Delay(100);
-
-
-
-
-
-
 
   }
   /* USER CODE END 3 */
@@ -328,7 +258,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_10;
   sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES;
+  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -345,6 +275,96 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 8400-1;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 2000-1;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+
+}
+
+/**
+  * @brief TIM4 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM4_Init(void)
+{
+
+  /* USER CODE BEGIN TIM4_Init 0 */
+
+  /* USER CODE END TIM4_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM4_Init 1 */
+
+  /* USER CODE END TIM4_Init 1 */
+  htim4.Instance = TIM4;
+  htim4.Init.Prescaler = 8400-1;
+  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim4.Init.Period = 65535;
+  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim4, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM4_Init 2 */
+
+  /* USER CODE END TIM4_Init 2 */
 
 }
 
@@ -414,11 +434,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : Z_axis_Pin */
-  GPIO_InitStruct.Pin = Z_axis_Pin;
+  /*Configure GPIO pin : Z_Axis_Pin */
+  GPIO_InitStruct.Pin = Z_Axis_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(Z_axis_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(Z_Axis_GPIO_Port, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
